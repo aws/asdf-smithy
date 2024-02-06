@@ -70,7 +70,7 @@ get_artifact_url() {
     else
       tag=$2
     fi
-    echo "$GH_REPO/releases/download/$tag/smithy-cli-$1.tar.gz"
+    echo "$GH_REPO/releases/download/$tag/smithy-cli-$1.zip"
   else
     fail "platform or version were not specified."
   fi
@@ -88,7 +88,8 @@ download_release() {
     echo "* Downloading $TOOL_NAME release ($version)..."
     url=$(get_artifact_url "$(get_platform)-$(get_arch)" "$version")
     if [ "$url" ]; then
-      curl "${curl_opts[@]}" "$url" | tar xzf - -C "$path" ||
+      mkdir -p "$path"
+      curl "${curl_opts[@]}" "$url" | tar xzf - -C "$path" --strip-components 1 ||
         fail "Request to '$url' returned bad response ($?)."
     else
       fail "Could not form url."
@@ -117,6 +118,8 @@ install_version() {
 
   (
     mkdir -p "$path"
+    # zips don't maintain permissions, so we need to add x perms to the right files
+    chmod +x "$download_path"/bin/* "$download_path"/lib/jspawnhelper
     cp -r "$download_path"/* "$path"
 
     # assert smithy exists and runs
