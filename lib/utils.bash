@@ -8,7 +8,7 @@ GH_REPO_API="https://api.github.com/repos/$REPO"
 TOOL_NAME="smithy"
 
 fail() {
-  echo -e "asdf-$TOOL_NAME: $*"
+  printf '%s\n' "asdf-$TOOL_NAME: $*" >&2
   exit 1
 }
 
@@ -44,6 +44,11 @@ get_platform() {
 # get architecture, output it, quit if unsupported
 get_arch() {
   arch="$(uname -m)"
+  if [[ "$arch" =~ "arm64" ]]; then
+    # uname may return arm64 for arm-based machines, they're synonymous
+    arch="aarch64"
+  fi
+
   if [[ ! $(check_arch "$arch") ]]; then
     fail "unsupported architecture ($arch)"
   fi
@@ -86,11 +91,19 @@ download_release() {
 
   if [ "$type" = "version" ]; then
     echo "* Downloading $TOOL_NAME release ($version)..."
-    url=$(get_artifact_url "$(get_platform)-$(get_arch)" "$version")
+    platform=$(get_platform)
+    arch=$(get_arch)
+    url=$(get_artifact_url "$platform-$arch" "$version")
     if [ "$url" ]; then
       mkdir -p "$path"
-      curl "${curl_opts[@]}" "$url" | tar xzf - -C "$path" --strip-components 1 ||
-        fail "Request to '$url' returned bad response ($?)."
+      echo "Retrieving release at $url..."
+      tmp_download_dir=$(mktemp -d -t asdf_extract_XXXXXXX)
+      cd "$tmp_download_dir"
+      curl "${curl_opts[@]}" -o smithy.zip "$url" || fail "Request to '$url' returned bad response ($?)."
+      unzip -oq smithy.zip
+      mv smithy-cli-"$platform"-"$arch"/* "$path"
+      rm -rf smithy-cli-"$platform"-"$arch" smithy.zip
+      cd -
     else
       fail "Could not form url."
     fi
