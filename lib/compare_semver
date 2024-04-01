@@ -1,0 +1,142 @@
+#!/bin/bash
+
+set -euo pipefail
+
+# Validate a semver string, exit if invalid.
+# Arguments:
+#   $1: semver string to validate
+validate_semver() {
+
+  # Regex for a semver digit
+  D='0|[1-9][0-9]*'
+  # Regex for a semver pre-release word
+  PW='[0-9]*[a-zA-Z-][0-9a-zA-Z-]*'
+  # Regex for a semver build-metadata word
+  MW='[0-9a-zA-Z-]+'
+
+  # Regex pattern to match a semver string with numeric version identifiers, pre-release identifiers, and build metadata
+  semver_pattern="^($D)\.($D)\.($D)(-(($D|$PW)(\.($D|$PW))*))?(\+($MW(\.$MW)*))?$"
+
+  if ! [[ $1 =~ $semver_pattern ]]; then
+    echo "$0: Invalid semver string: $1" >&2
+    echo "$0: Expected format 'x.y.z' or 'x.y.z-pre-release'."
+    exit 1
+  fi
+}
+
+# Function to compare two component strings.
+# Arguments:
+#   $1: First component string
+#   $2: Second component string
+# Output:
+#   -1 if the first component has lower precedence
+#    1 if the first component has higher precedence
+compare_components() {
+  if (($1 > $2)); then
+    echo 1 && exit 0
+  elif (($1 < $2)); then
+    echo -1 && exit 0
+  fi
+}
+
+# Function to compare pre-release identifiers.
+# Arguments:
+#   $1: First pre-release identifier
+#   $2: Second pre-release identifier
+# Output:
+#   -1 if the first pre-release identifier has lower precedence
+#    0 if both identifiers are equal
+#    1 if the first pre-release identifier has higher precedence
+compare_prerelease() {
+  # If both pre-release identifiers are empty, they are considered equal
+  if [ -z "$1" ] && [ -z "$2" ]; then
+    echo 0 && exit 0
+  fi
+
+  # If one of the pre-release identifiers is empty, the one with the non-empty identifier has lower precedence
+  if [ -z "$1" ]; then
+    echo 1 && exit 0
+  elif [ -z "$2" ]; then
+    echo -1 && exit 0
+  fi
+
+  # Split pre-release identifiers into individual parts
+  IFS='.' read -r -a parts1 <<<"$1"
+  IFS='.' read -r -a parts2 <<<"$2"
+
+  # Compare each part of the pre-release identifiers
+  for ((i = 0; i < ${#parts1[@]} || i < ${#parts2[@]}; i++)); do
+    part1="${parts1[i]:=""}"
+    part2="${parts2[i]:=""}"
+
+    # If one part is missing, it has lower precedence
+    if [ -z "$part1" ]; then
+      echo -1 && exit 0
+    elif [ -z "$part2" ]; then
+      echo 1 && exit 0
+    fi
+
+    # If parts are numeric, compare numerically
+    if [[ "$part1" =~ ^[0-9]+$ ]] && [[ "$part2" =~ ^[0-9]+$ ]]; then
+      compare_components "$part1" "$part2"
+    fi
+
+    # Lexicographically compare non-numeric parts
+    [[ "$part1" < "$part2" ]] && echo -1 && exit 0
+    [[ "$part1" > "$part2" ]] && echo 1 && exit 0
+  done
+
+  # Versions are equal
+  echo 0
+}
+
+# Function to compare two semver strings.
+# Arguments:
+#   $1: First semver string
+#   $2: Second semver string
+# Output:
+#   -1 if the first version is less than the second version
+#    0 if the versions are equal
+#    1 if the first version is greater than the second version
+compare_semver() {
+  # Validate the semver strings
+  validate_semver "$1"
+  validate_semver "$2"
+
+  # Remove build metadata if present
+  semver1=$(cut -d+ -f1 <<<"$1")
+  semver2=$(cut -d+ -f1 <<<"$2")
+
+  # Extract major, minor, patch, and pre-release versions from the input strings
+  major1=$(cut -d. -f1 <<<"$semver1")
+  minor1=$(cut -d. -f2 <<<"$semver1")
+  patch1=$(cut -d. -f3 -s <<<"$semver1" | cut -d- -f1)
+  prerelease1=$(cut -d- -f2- -s <<<"$semver1")
+
+  major2=$(cut -d. -f1 <<<"$semver2")
+  minor2=$(cut -d. -f2 <<<"$semver2")
+  patch2=$(cut -d. -f3 -s <<<"$semver2" | cut -d- -f1)
+  prerelease2=$(cut -d- -f2- -s <<<"$semver2")
+
+  # Compare each component of the versions
+  compare_components "$major1" "$major2"
+  compare_components "$minor1" "$minor2"
+  compare_components "$patch1" "$patch2"
+
+  # Check if one version has a pre-release identifier while the other does not
+  if [ -n "$prerelease1" ] && [ -z "$prerelease2" ]; then
+    echo -1 && exit 0
+  elif [ -z "$prerelease1" ] && [ -n "$prerelease2" ]; then
+    echo 1 && exit 0
+  fi
+
+  # Compare pre-release identifiers if they exist
+  if [ -n "$prerelease1" ] && [ -n "$prerelease2" ]; then
+    compare_prerelease "$prerelease1" "$prerelease2" && exit 0
+  fi
+
+  # Versions are equal
+  echo 0
+}
+
+compare_semver "$1" "$2"

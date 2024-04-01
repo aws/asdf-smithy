@@ -6,6 +6,7 @@ REPO="smithy-lang/smithy"
 GH_REPO="https://github.com/$REPO"
 GH_REPO_API="https://api.github.com/repos/$REPO"
 TOOL_NAME="smithy"
+LIB="$(dirname "$(dirname "$(readlink -f "$0")")")/lib"
 
 fail() {
   printf '%s\n' "asdf-$TOOL_NAME: $*" >&2
@@ -64,7 +65,7 @@ check_arch() {
 }
 
 # get the url for the artifact to download, based on
-# the system (1st arg) and the version (2nd arg)
+# the system (1st arg), the version (2nd arg), and the file extensions (3rd arg)
 get_artifact_url() {
   check jq
   if [ "$#" -gt 1 ]; then
@@ -75,7 +76,7 @@ get_artifact_url() {
     else
       tag=$2
     fi
-    echo "$GH_REPO/releases/download/$tag/smithy-cli-$1.zip"
+    echo "$GH_REPO/releases/download/$tag/smithy-cli-$1.$3"
   else
     fail "platform or version were not specified."
   fi
@@ -93,19 +94,35 @@ download_release() {
     echo "* Downloading $TOOL_NAME release ($version)..."
     platform=$(get_platform)
     arch=$(get_arch)
-    url=$(get_artifact_url "$platform-$arch" "$version")
-    if [ "$url" ]; then
-      mkdir -p "$path"
-      echo "Retrieving release at $url..."
-      tmp_download_dir=$(mktemp -d -t asdf_extract_XXXXXXX)
-      cd "$tmp_download_dir"
-      curl "${curl_opts[@]}" -o smithy.zip "$url" || fail "Request to '$url' returned bad response ($?)."
-      unzip -oq smithy.zip
-      mv smithy-cli-"$platform"-"$arch"/* "$path"
-      rm -rf smithy-cli-"$platform"-"$arch" smithy.zip
-      cd -
+    # Based on the version, install from tar or zip
+    # versions earlier than 1.47.0 must install from tarball
+    vercmp="$(. "$LIB"/compare_semver "$version" "1.47.0")"
+    if [ "$vercmp" = "-1" ]; then
+      # version is less than 1.47.0, use tar
+      url=$(get_artifact_url "$(get_platform)-$(get_arch)" "$version" "tar.gz")
+      if [ "$url" ]; then
+        echo "Retrieving release at $url..."
+        curl "${curl_opts[@]}" "$url" | tar xzf - -C "$path" ||
+          fail "Request to '$url' returned bad response ($?)."
+      else
+        fail "Could not form url."
+      fi
     else
-      fail "Could not form url."
+      # version is greater than or equal to 1.47.0, use zip
+      url=$(get_artifact_url "$platform-$arch" "$version" "zip")
+      if [ "$url" ]; then
+        mkdir -p "$path"
+        echo "Retrieving release at $url..."
+        tmp_download_dir=$(mktemp -d -t asdf_extract_XXXXXXX)
+        cd "$tmp_download_dir"
+        curl "${curl_opts[@]}" -o smithy.zip "$url" || fail "Request to '$url' returned bad response ($?)."
+        unzip -oq smithy.zip
+        mv smithy-cli-"$platform"-"$arch"/* "$path"
+        rm -rf smithy-cli-"$platform"-"$arch" smithy.zip
+        cd -
+      else
+        fail "Could not form url."
+      fi
     fi
   else
     fail "Download by '$type' is not supported."
