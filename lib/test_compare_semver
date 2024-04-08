@@ -1,0 +1,67 @@
+#!/bin/bash
+
+test_cases=(
+  # Versions are equal
+  "1.0.0 1.0.0 0"
+  "1.1.0 1.1.0 0"
+  "1.0.1 1.0.1 0"
+  "1.0.0-alpha 1.0.0-alpha 0"
+  "1.0.0-alpha.beta 1.0.0-alpha.beta 0"
+  "1.0.0-abc123.1.1.1 1.0.0-abc123.1.1.1 0"
+
+  # First version is less than second version
+  "1.0.0 2.0.0 -1"
+  "1.0.0 1.1.0 -1"
+  "1.0.0 1.0.1 -1"
+  "1.0.0-alpha 1.0.0 -1"
+
+  # First version is greater than second version
+  "2.0.0 1.0.0 1"
+  "1.1.0 1.0.0 1"
+  "1.0.1 1.0.0 1"
+  "1.0.0 1.0.0-alpha 1"
+  "1.0.0-alpha.1 1.0.0-alpha 1"
+
+  # Pre-release versions comparison
+  "1.0.0-alpha 1.0.0-alpha.beta -1"
+  "1.0.0-alpha.beta 1.0.0-beta -1"
+  "1.0.0-alpha.beta 1.0.0-beta.2 -1"
+  "1.0.0-alpha.beta 1.0.0-beta.11 -1"
+  "1.0.0-alpha.beta 1.0.0-rc.1 -1"
+  "1.0.0-alpha.beta 1.0.0 -1"
+  "1.0.0-beta 1.0.0-beta.2 -1"
+  "1.0.0-beta 1.0.0-beta.11 -1"
+  "1.0.0-beta 1.0.0-rc.1 -1"
+  "1.0.0-beta 1.0.0 -1"
+  "1.0.0-beta.2 1.0.0-beta.11 -1"
+  "1.0.0-beta.2 1.0.0-rc.1 -1"
+  "1.0.0-beta.2 1.0.0 -1"
+  "1.0.0-beta.11 1.0.0-rc.1 -1"
+  "1.0.0-rc.1 1.0.0-rc.2 -1"
+  "1.0.0-rc.1 1.0.0 -1"
+
+  # Versions with build metadata
+  "1.0.0 1.0.0+build.1 0"
+  "1.0.0 1.0.0+build.2 0"
+  "1.0.0-alpha 1.0.0-alpha+build.1 0"
+  "1.0.0-alpha+build.1 1.0.0-alpha+build.2 0"
+  "1.0.0-alpha+build.1 1.0.0+build.1 -1"
+  "1.0.0+early 1.0.1+late -1"
+  "1.0.0+early 1.1.0+late -1"
+  "1.0.0+early 2.0.0+late -1"
+)
+
+LIB="$(dirname "$(readlink -f "$0")")"
+
+# Run test cases
+for test_case in "${test_cases[@]}"; do
+  versions=()
+  read -ra versions <<<"$test_case"
+  result=$("$LIB/compare_semver" "${versions[0]}" "${versions[1]}")
+  expected="${versions[2]}"
+  if [ "$result" -eq "$expected" ]; then
+    echo "OK: ${versions[0]} compared to ${versions[1]} :: Result - $result"
+  else
+    echo "FAIL: ${versions[0]} compared to ${versions[1]} :: Expected - $expected, Actual - $result"
+  fi
+done
